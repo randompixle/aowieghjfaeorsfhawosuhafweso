@@ -268,8 +268,9 @@ namespace XpOllamaTerminal
             string model = modelBox.Text.Trim();
             string url = endpoint.TrimEnd('/') + "/api/generate";
             string systemHint =
-                "You can run local commands by writing a line starting with !cmd followed by the command. " +
-                "Only output task-relevant text. If using !cmd, keep it on its own line.";
+                "Hint: you can do \"!cmd <cmd>\" to run a cmd in the XP terminal you have access to. " +
+                "You can place !cmd anywhere in your response, but prefer a dedicated line like: !cmd echo hi. " +
+                "Only output task-relevant text.";
             string fullPrompt = systemHint + "\n\nUser:\n" + prompt;
             string body = "{\"model\":\"" + EscapeJson(model) + "\",\"prompt\":\"" + EscapeJson(fullPrompt) + "\",\"stream\":false}";
 
@@ -356,16 +357,20 @@ namespace XpOllamaTerminal
             foreach (var raw in lines)
             {
                 var line = raw.TrimEnd();
-                if (line.StartsWith("!cmd "))
+                bool hadCmd = false;
+                int idx = 0;
+                while ((idx = line.IndexOf("!cmd ", idx, StringComparison.Ordinal)) >= 0)
                 {
-                    var cmd = line.Substring(5).Trim();
+                    var cmd = line.Substring(idx + 5).Trim();
                     if (cmd.Length > 0 && cmdIn != null)
                     {
                         cmdIn.WriteLine(cmd);
                         cmdIn.Flush();
                     }
-                    continue;
+                    hadCmd = true;
+                    break;
                 }
+                if (hadCmd) continue;
                 if (visible.Length > 0) visible.AppendLine();
                 visible.Append(line);
             }

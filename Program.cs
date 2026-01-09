@@ -271,8 +271,10 @@ namespace XpOllamaTerminal
             string model = modelBox.Text.Trim();
             string url = endpoint.TrimEnd('/') + "/api/generate";
             string systemHint =
-                "Hint: you can do \"!cmd <cmd>\" to run a cmd in the XP terminal you have access to. " +
-                "You can place !cmd anywhere in your response, but prefer a dedicated line like: !cmd echo hi. " +
+                "You are integrated into a Windows XP app that provides a local cmd.exe terminal. " +
+                "You can run commands by writing \"!cmd <cmd>\" in your response. " +
+                "Do not claim you lack access to the terminal. " +
+                "Prefer a dedicated line like: !cmd echo hi. " +
                 "Only output task-relevant text.";
             string history = BuildHistory();
             string fullPrompt = systemHint + "\n\nRecent chat:\n" + history + "\n\nUser:\n" + prompt;

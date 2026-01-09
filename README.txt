@@ -22,3 +22,5 @@ Notes
 - The JSON parsing is minimal and expects a non-streaming Ollama response.
 - The input box is shared for "Run Cmd" and "Send to AI".
 - XP command sending uses the guest agent command socket (default port 6001).
+- The AI can run local cmd.exe commands by outputting "!cmd <command>".
+- Use "Run Script" to send multiple action lines to the XP guest (prefix local commands with !cmd).

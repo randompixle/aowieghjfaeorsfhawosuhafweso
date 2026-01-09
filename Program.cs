@@ -40,7 +40,6 @@ namespace XpOllamaTerminal
 
         private Process cmdProc;
         private StreamWriter cmdIn;
-        private Thread cmdReaderThread;
 
         [DllImport("kernel32.dll", CharSet = CharSet.Ansi)]
         private static extern int GetPrivateProfileString(
@@ -152,7 +151,6 @@ namespace XpOllamaTerminal
             base.OnFormClosing(e);
             try { if (cmdIn != null) cmdIn.Close(); } catch { }
             try { if (cmdProc != null && !cmdProc.HasExited) cmdProc.Kill(); } catch { }
-            try { if (cmdReaderThread != null && cmdReaderThread.IsAlive) cmdReaderThread.Join(200); } catch { }
         }
 
         private void LoadConfig()
@@ -190,41 +188,27 @@ namespace XpOllamaTerminal
                 psi.RedirectStandardOutput = true;
                 psi.RedirectStandardError = true;
                 psi.CreateNoWindow = true;
-                cmdProc = Process.Start(psi);
+                cmdProc = new Process();
+                cmdProc.StartInfo = psi;
+                cmdProc.OutputDataReceived += (s, e) =>
+                {
+                    if (!string.IsNullOrEmpty(e.Data))
+                        AppendLineThreadSafe(termBox, e.Data);
+                };
+                cmdProc.ErrorDataReceived += (s, e) =>
+                {
+                    if (!string.IsNullOrEmpty(e.Data))
+                        AppendLineThreadSafe(termBox, e.Data);
+                };
+                cmdProc.Start();
                 cmdIn = cmdProc.StandardInput;
-                cmdReaderThread = new Thread(ReadCmdOutput);
-                cmdReaderThread.IsBackground = true;
-                cmdReaderThread.Start();
+                cmdProc.BeginOutputReadLine();
+                cmdProc.BeginErrorReadLine();
             }
             catch
             {
                 AppendLine(termBox, "(failed to spawn cmd.exe)");
             }
-        }
-
-        private void ReadCmdOutput()
-        {
-            try
-            {
-                var reader = cmdProc.StandardOutput;
-                var errReader = cmdProc.StandardError;
-                char[] buf = new char[512];
-                while (!cmdProc.HasExited)
-                {
-                    if (reader.Peek() > -1)
-                    {
-                        int read = reader.Read(buf, 0, buf.Length);
-                        if (read > 0) AppendTextThreadSafe(termBox, new string(buf, 0, read));
-                    }
-                    if (errReader.Peek() > -1)
-                    {
-                        int read = errReader.Read(buf, 0, buf.Length);
-                        if (read > 0) AppendTextThreadSafe(termBox, new string(buf, 0, read));
-                    }
-                    Thread.Sleep(10);
-                }
-            }
-            catch { }
         }
 
         private void RunCommandFromInput()

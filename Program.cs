@@ -40,6 +40,8 @@ namespace XpOllamaTerminal
 
         private Process cmdProc;
         private StreamWriter cmdIn;
+        private System.Collections.Generic.List<string> chatHistory = new System.Collections.Generic.List<string>();
+        private const int MaxHistoryLines = 12;
 
         [DllImport("kernel32.dll", CharSet = CharSet.Ansi)]
         private static extern int GetPrivateProfileString(
@@ -254,6 +256,7 @@ namespace XpOllamaTerminal
             AppendLine(chatBox, "User:");
             AppendLine(chatBox, prompt);
             AppendLine(chatBox, "");
+            AddHistory("User: " + prompt);
             SaveConfig();
 
             var thread = new Thread(() => ChatRequest(prompt));
@@ -271,7 +274,8 @@ namespace XpOllamaTerminal
                 "Hint: you can do \"!cmd <cmd>\" to run a cmd in the XP terminal you have access to. " +
                 "You can place !cmd anywhere in your response, but prefer a dedicated line like: !cmd echo hi. " +
                 "Only output task-relevant text.";
-            string fullPrompt = systemHint + "\n\nUser:\n" + prompt;
+            string history = BuildHistory();
+            string fullPrompt = systemHint + "\n\nRecent chat:\n" + history + "\n\nUser:\n" + prompt;
             string body = "{\"model\":\"" + EscapeJson(model) + "\",\"prompt\":\"" + EscapeJson(fullPrompt) + "\",\"stream\":false}";
 
             try
@@ -293,6 +297,8 @@ namespace XpOllamaTerminal
                     string visible = HandleCmdDirectives(answer);
                     AppendLineThreadSafe(chatBox, string.IsNullOrEmpty(visible) ? "(no response)" : visible);
                     AppendLineThreadSafe(chatBox, "");
+                    if (!string.IsNullOrEmpty(visible))
+                        AddHistory("AI: " + visible);
                     if (sendAiToXpCheck.Checked && !string.IsNullOrEmpty(answer))
                     {
                         TrySendActionsToXp(answer);
@@ -375,6 +381,19 @@ namespace XpOllamaTerminal
                 visible.Append(line);
             }
             return visible.ToString().Trim();
+        }
+
+        private void AddHistory(string line)
+        {
+            chatHistory.Add(line);
+            while (chatHistory.Count > MaxHistoryLines)
+                chatHistory.RemoveAt(0);
+        }
+
+        private string BuildHistory()
+        {
+            if (chatHistory.Count == 0) return "(none)";
+            return string.Join("\n", chatHistory.ToArray());
         }
 
         private void AppendTextThreadSafe(RichTextBox box, string text)

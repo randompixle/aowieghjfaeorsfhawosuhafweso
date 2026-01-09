@@ -668,7 +668,7 @@ namespace XpOllamaTerminal
         private void AddHistory(string line)
         {
             chatHistory.Add(line);
-            while (chatHistory.Count > MaxHistoryLines)
+            while (chatHistory.Count > maxHistoryLines)
                 chatHistory.RemoveAt(0);
         }
 

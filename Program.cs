@@ -30,9 +30,13 @@ namespace XpOllamaTerminal
         private TextBox inputBox;
         private TextBox endpointBox;
         private TextBox modelBox;
+        private TextBox xpHostBox;
+        private TextBox xpPortBox;
         private Label statusLabel;
         private Button sendAiButton;
         private Button runCmdButton;
+        private Button sendXpCmdButton;
+        private CheckBox sendAiToXpCheck;
 
         private Process cmdProc;
         private StreamWriter cmdIn;
@@ -81,6 +85,11 @@ namespace XpOllamaTerminal
             runCmdButton.SetBounds(660, 370, 110, 24);
             runCmdButton.Click += (s, e) => RunCommandFromInput();
 
+            sendXpCmdButton = new Button();
+            sendXpCmdButton.Text = "Send XP Cmd";
+            sendXpCmdButton.SetBounds(780, 370, 130, 24);
+            sendXpCmdButton.Click += (s, e) => SendXpCmdFromInput();
+
             var endpointLabel = new Label();
             endpointLabel.Text = "Endpoint:";
             endpointLabel.SetBounds(10, 280, 70, 20);
@@ -95,6 +104,24 @@ namespace XpOllamaTerminal
             modelBox = new TextBox();
             modelBox.SetBounds(80, 308, 300, 22);
 
+            var xpHostLabel = new Label();
+            xpHostLabel.Text = "XP Host:";
+            xpHostLabel.SetBounds(10, 340, 70, 20);
+
+            xpHostBox = new TextBox();
+            xpHostBox.SetBounds(80, 338, 200, 22);
+
+            var xpPortLabel = new Label();
+            xpPortLabel.Text = "XP Port:";
+            xpPortLabel.SetBounds(290, 340, 60, 20);
+
+            xpPortBox = new TextBox();
+            xpPortBox.SetBounds(350, 338, 80, 22);
+
+            sendAiToXpCheck = new CheckBox();
+            sendAiToXpCheck.Text = "Send AI actions to XP";
+            sendAiToXpCheck.SetBounds(540, 400, 200, 20);
+
             statusLabel = new Label();
             statusLabel.Text = "Ready";
             statusLabel.SetBounds(10, 370, 520, 20);
@@ -104,10 +131,16 @@ namespace XpOllamaTerminal
             Controls.Add(inputBox);
             Controls.Add(sendAiButton);
             Controls.Add(runCmdButton);
+            Controls.Add(sendXpCmdButton);
             Controls.Add(endpointLabel);
             Controls.Add(endpointBox);
             Controls.Add(modelLabel);
             Controls.Add(modelBox);
+            Controls.Add(xpHostLabel);
+            Controls.Add(xpHostBox);
+            Controls.Add(xpPortLabel);
+            Controls.Add(xpPortBox);
+            Controls.Add(sendAiToXpCheck);
             Controls.Add(statusLabel);
 
             LoadConfig();
@@ -130,12 +163,21 @@ namespace XpOllamaTerminal
             GetPrivateProfileString("ollama", "model", DefaultModel, model, model.Capacity, "config.ini");
             endpointBox.Text = endpoint.ToString();
             modelBox.Text = model.ToString();
+
+            var xpHost = new StringBuilder(128);
+            var xpPort = new StringBuilder(16);
+            GetPrivateProfileString("xp", "host", "192.168.29.129", xpHost, xpHost.Capacity, "config.ini");
+            GetPrivateProfileString("xp", "port", "6001", xpPort, xpPort.Capacity, "config.ini");
+            xpHostBox.Text = xpHost.ToString();
+            xpPortBox.Text = xpPort.ToString();
         }
 
         private void SaveConfig()
         {
             WritePrivateProfileString("ollama", "endpoint", endpointBox.Text, "config.ini");
             WritePrivateProfileString("ollama", "model", modelBox.Text, "config.ini");
+            WritePrivateProfileString("xp", "host", xpHostBox.Text, "config.ini");
+            WritePrivateProfileString("xp", "port", xpPortBox.Text, "config.ini");
         }
 
         private void StartCmd()
@@ -197,6 +239,29 @@ namespace XpOllamaTerminal
             inputBox.Text = "";
         }
 
+        private void SendXpCmdFromInput()
+        {
+            var line = inputBox.Text.Trim();
+            if (line.Length == 0) return;
+            SaveConfig();
+            try
+            {
+                SendLinesToXp(new string[] { "cmd " + line });
+                AppendLine(chatBox, "XP Cmd:");
+                AppendLine(chatBox, line);
+                AppendLine(chatBox, "");
+                inputBox.Text = "";
+                SetStatus("XP command sent");
+            }
+            catch
+            {
+                AppendLine(chatBox, "XP Cmd:");
+                AppendLine(chatBox, "(failed to send)");
+                AppendLine(chatBox, "");
+                SetStatus("XP send error");
+            }
+        }
+
         private void StartChatRequest()
         {
             var prompt = inputBox.Text.Trim();
@@ -238,6 +303,10 @@ namespace XpOllamaTerminal
                     AppendLineThreadSafe(chatBox, "AI:");
                     AppendLineThreadSafe(chatBox, string.IsNullOrEmpty(answer) ? "(no response)" : answer);
                     AppendLineThreadSafe(chatBox, "");
+                    if (sendAiToXpCheck.Checked && !string.IsNullOrEmpty(answer))
+                    {
+                        TrySendActionsToXp(answer);
+                    }
                     SetStatus("Ready");
                 }
             }
@@ -318,6 +387,50 @@ namespace XpOllamaTerminal
                 return;
             }
             statusLabel.Text = text;
+        }
+
+        private void SendLinesToXp(string[] lines)
+        {
+            string host = xpHostBox.Text.Trim();
+            int port = 6001;
+            int.TryParse(xpPortBox.Text.Trim(), out port);
+            if (port <= 0) port = 6001;
+
+            using (var client = new System.Net.Sockets.TcpClient())
+            {
+                client.ReceiveTimeout = 5000;
+                client.SendTimeout = 5000;
+                client.Connect(host, port);
+                using (var stream = client.GetStream())
+                {
+                    string payload = string.Join("\n", lines) + "\n";
+                    byte[] data = Encoding.UTF8.GetBytes(payload);
+                    stream.Write(data, 0, data.Length);
+                    stream.Flush();
+                }
+            }
+        }
+
+        private void TrySendActionsToXp(string text)
+        {
+            var lines = new System.Collections.Generic.List<string>();
+            var parts = text.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n');
+            foreach (var raw in parts)
+            {
+                var line = raw.Trim();
+                if (line.Length == 0) continue;
+                lines.Add(line);
+            }
+            if (lines.Count == 0) return;
+            try
+            {
+                SendLinesToXp(lines.ToArray());
+                SetStatus("AI actions sent to XP");
+            }
+            catch
+            {
+                SetStatus("AI send to XP failed");
+            }
         }
     }
 }

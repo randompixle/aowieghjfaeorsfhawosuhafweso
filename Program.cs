@@ -267,7 +267,11 @@ namespace XpOllamaTerminal
             string endpoint = endpointBox.Text.Trim();
             string model = modelBox.Text.Trim();
             string url = endpoint.TrimEnd('/') + "/api/generate";
-            string body = "{\"model\":\"" + EscapeJson(model) + "\",\"prompt\":\"" + EscapeJson(prompt) + "\",\"stream\":false}";
+            string systemHint =
+                "You can run local commands by writing a line starting with !cmd followed by the command. " +
+                "Only output task-relevant text. If using !cmd, keep it on its own line.";
+            string fullPrompt = systemHint + "\n\nUser:\n" + prompt;
+            string body = "{\"model\":\"" + EscapeJson(model) + "\",\"prompt\":\"" + EscapeJson(fullPrompt) + "\",\"stream\":false}";
 
             try
             {
@@ -285,7 +289,8 @@ namespace XpOllamaTerminal
                     string json = reader.ReadToEnd();
                     string answer = ExtractResponse(json);
                     AppendLineThreadSafe(chatBox, "AI:");
-                    AppendLineThreadSafe(chatBox, string.IsNullOrEmpty(answer) ? "(no response)" : answer);
+                    string visible = HandleCmdDirectives(answer);
+                    AppendLineThreadSafe(chatBox, string.IsNullOrEmpty(visible) ? "(no response)" : visible);
                     AppendLineThreadSafe(chatBox, "");
                     if (sendAiToXpCheck.Checked && !string.IsNullOrEmpty(answer))
                     {
@@ -341,6 +346,30 @@ namespace XpOllamaTerminal
                 sb.Append(s[i]);
             }
             return sb.ToString();
+        }
+
+        private string HandleCmdDirectives(string answer)
+        {
+            if (string.IsNullOrEmpty(answer)) return "";
+            var lines = answer.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n');
+            var visible = new StringBuilder();
+            foreach (var raw in lines)
+            {
+                var line = raw.TrimEnd();
+                if (line.StartsWith("!cmd "))
+                {
+                    var cmd = line.Substring(5).Trim();
+                    if (cmd.Length > 0 && cmdIn != null)
+                    {
+                        cmdIn.WriteLine(cmd);
+                        cmdIn.Flush();
+                    }
+                    continue;
+                }
+                if (visible.Length > 0) visible.AppendLine();
+                visible.Append(line);
+            }
+            return visible.ToString().Trim();
         }
 
         private void AppendTextThreadSafe(RichTextBox box, string text)
